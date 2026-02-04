@@ -36,7 +36,9 @@ class Builtin:
 
     def do_exit(self, *args) -> Status:
         try:
-            raise SystemExit(int(args[0]))
+            if len(args) > 0:
+                raise SystemExit(int(args[0]))
+            raise SystemExit(0)
         except ValueError:
             raise SystemExit(1)
 
