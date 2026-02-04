@@ -1,20 +1,37 @@
 import sys
 import readline
 import subprocess
+from typing import Dict, AnyStr, List
 from dataclasses import dataclass
 
 # ogni comando eseguito ritorna uno status code
 type Status = int
 
 @dataclass
+class Command:
+    """ descrive un comando """
+    name: AnyStr
+    args: List[AnyStr]
+
+@dataclass
 class Builtin:
     """ comandi builtin """
 
-    def do_echo(self, *args) -> Status:
-        pass
+    def __post_init__(self) -> None:
+        self._internal = {}
+        for attr in dir(self):
+            if attr.startswith("do_"):
+                self._internal[attr[3:]] = getattr(self, attr)
+    @property
+    def cmd(self):
+        return self._internal
+        
+    def is_builtin(self, cmd: str) -> bool:
+        return True if cmd in self._internal else False
 
-    def do_exit(self, *args) -> Status:
-        pass
+    def do_echo(self, *args) -> Status:
+        sys.stdout.write(f"{' '.join(*args)}\n")
+        return 0
 
     def do_type(self, *args) -> Status:
         pass
@@ -27,27 +44,43 @@ class Shell:
     def __post_init__(self) -> None:
         # list comandi builtin supportati dalla shell
         self.builtins = Builtin()
-        self.latest_status_code = -1
+        self.status = -1            # ultimo codice di errore
 
-    def _run_cmd(self, cmd: str) -> Status:
-        sys.stderr.write(f"{cmd[0]}: command not found\n")
-        return 1
+    def _run_cmd(self, cmd: Command) -> Status:
+        if cmd.name == "exit":
+            raise SystemExit(cmd.args[0] if cmd.args else 0)
+            
+        # 1. Verifica se è un comando builtin
+        if self.builtins.is_builtin(cmd.name):
+            return self.builtins.cmd[cmd.name](cmd.args)
+        # 2. Verifica se è un comando esterno
 
-    def show(self):
+        # 3. Se non ne è nei primi due casi allora è un comando che non esiste
+        else:
+            sys.stderr.write(f"{cmd.name}: command not found\n")
+            return 1
+
+    def repl(self) -> None:
         """ Mostra la shell """
         while True:
             try:
-                cmd = input(self.PROMPT)
-                if cmd == "exit":
-                    break
-                status = self._run_cmd(cmd.strip().split())
+                raw = input(self.PROMPT).strip().split()
+                cmd = Command(raw[0], raw[1:])
+                self.status = self._run_cmd(cmd)
             except (EOFError, KeyboardInterrupt):
-                sys.stdout.write('\n')
                 continue
+            except SystemExit:
+                raise
         
 def main() -> None:
-    s = Shell()
-    s.show()
-
+    try:
+        s = Shell()
+        s.repl()
+    except SystemExit as exit_code:
+        try:
+            sys.exit(exit_code)
+        except ValueError:
+            sys.exit(1)
+            
 if __name__ == "__main__":
     main()
