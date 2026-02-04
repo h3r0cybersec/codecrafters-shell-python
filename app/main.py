@@ -46,7 +46,7 @@ class Builtin:
             if self.is_builtin(cmd):
                 out += f"{cmd} is a shell builtin\n"
             else:
-                out += f"{cmd}: command not found\n"
+                out += f"{cmd}: not found\n"
         sys.stdout.write(out)
 
     def do_pwd(self, *args) -> Status:
