@@ -38,7 +38,7 @@ class Builtin:
         out = ""
         for cmd in args:
             if self.is_builtin(cmd):
-                out += f"{cmd}: is shell builtin\n"
+                out += f"{cmd} is shell builtin\n"
             else:
                 out += f"{cmd}: command not found\n"
         sys.stdout.write(out)
