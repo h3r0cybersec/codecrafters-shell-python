@@ -1,9 +1,10 @@
 import sys
 from pathlib import Path
 import readline
-import subprocess
+from subprocess import PIPE, Popen
 from typing import Dict, AnyStr, List
 from dataclasses import dataclass
+import shlex
 import os
 
 # ogni comando eseguito ritorna uno status code
@@ -44,7 +45,7 @@ class Builtin:
                     if cmd == file.name:
                         full_path = Path(loc) / file
                         if os.access(full_path, os.X_OK):
-                            return full_path
+                            return str(full_path)
             except: continue
         return ''
 
@@ -84,9 +85,18 @@ class Builtin:
 
 @dataclass
 class Command:
-    """ descrive un comando """
-    name    : AnyStr
-    args    : List[AnyStr]
+    """ formatta un comando  """
+    raw  : List[AnyStr]
+    path : AnyStr = ""
+
+
+    @property
+    def name(self):
+        return self.raw[0]
+
+    @property
+    def args(self):
+        return self.raw[1:]
         
 @dataclass
 class Shell:
@@ -100,24 +110,35 @@ class Shell:
 
     def _run_cmd(self, cmd: Command) -> Status:
         """ esegue un comando nel sistema """
-        
         # 1. Verifica se è un comando builtin
         if self.builtins.is_builtin(cmd.name):
             return self.builtins.cmd[cmd.name](*cmd.args)
         # 2. Verifica se è un comando esterno
-        elif self.builtins.is_external(cmd.name):
-            pass
+        elif (exe_path := self.builtins.is_external(cmd.name)):
+            cmd.path = exe_path 
+            return self._execute(cmd)
         # 3. Se non ne è nei primi due casi allora è un comando che non esiste
         else:
             sys.stderr.write(f"{cmd.name}: command not found\n")
             return 1
 
+    def _execute(self, cmd: Command) -> Status:
+        proc     = Popen([cmd.name, *cmd.args], env=self.environment, stdout=PIPE, text=True)
+        out, err = proc.communicate()
+        if err:
+            sys.stderr.write(err)
+        else:
+            sys.stdout.write(out)
+        return proc.returncode
+
     def repl(self) -> None:
         """ Mostra la shell """
         while True:
             try:
-                raw = input(self.environment["PS1"]).strip().split()
-                cmd = Command(raw[0], raw[1:])
+                raw = input(self.environment["PS1"]).strip()
+                if not raw:
+                    continue
+                cmd = Command(shlex.split(raw))
                 self.status = self._run_cmd(cmd)
             except (EOFError, KeyboardInterrupt):
                 continue
