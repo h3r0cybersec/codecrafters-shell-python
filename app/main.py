@@ -34,6 +34,12 @@ class Builtin:
         sys.stdout.write(f"{' '.join(args)}\n")
         return 0
 
+    def do_exit(self, *args) -> Status:
+        try:
+            raise SystemExit(int(args[0]))
+        except ValueError:
+            raise SystemExit(1)
+
     def do_type(self, *args) -> Status:
         out = ""
         for cmd in args:
@@ -59,9 +65,7 @@ class Shell:
 
     def _run_cmd(self, cmd: Command) -> Status:
         """ esegue un comando nel sistema """
-        if cmd.name == "exit":
-            raise SystemExit(cmd.args[0] if cmd.args else 0)
-            
+        
         # 1. Verifica se è un comando builtin
         if self.builtins.is_builtin(cmd.name):
             return self.builtins.cmd[cmd.name](*cmd.args)
@@ -89,10 +93,7 @@ def main() -> None:
         s = Shell()
         s.repl()
     except SystemExit as exit_code:
-        try:
-            sys.exit(exit_code)
-        except ValueError:
-            sys.exit(1)
+        sys.exit(exit_code)
             
 if __name__ == "__main__":
     main()
