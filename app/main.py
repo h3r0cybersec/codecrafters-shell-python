@@ -73,7 +73,7 @@ class Builtin:
         sys.stdout.write(out)
 
     def do_pwd(self, *args) -> Status:
-        sys.stdout.write(os.getcwd())
+        sys.stdout.write(f"{os.getcwd()}\n")
         return 0
 
     def do_env(self, *args) -> Status:
@@ -88,7 +88,6 @@ class Command:
     """ formatta un comando  """
     raw  : List[AnyStr]
     path : AnyStr = ""
-
 
     @property
     def name(self):
