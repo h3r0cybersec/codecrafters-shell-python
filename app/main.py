@@ -4,12 +4,15 @@ import readline
 from subprocess import PIPE, Popen
 from typing import Dict, AnyStr, List
 from dataclasses import dataclass
-from collections import UserDict
+from collections import UserDict, namedtuple
+import contextlib
 import shlex
 import os
 
 # ogni comando eseguito ritorna uno status code
 type Status = int
+
+Redirection = namedtuple("Redirection", "index, file, mode, stdout, stderr")
 
 class Environment(UserDict):
     def __init__(self, *args, **kwargs):
@@ -43,13 +46,11 @@ class Builtin:
         search_path = self.env["PATH"].split(":")
         for loc in search_path:
             try:
-                for file in Path(loc).iterdir():
-                    if cmd == file.name:
-                        full_path = Path(loc) / file
-                        if os.access(full_path, os.X_OK):
-                            return str(full_path)
+                full_path = Path(loc) / cmd
+                if full_path.exists() and os.access(full_path, os.X_OK):
+                    return full_path
             except: continue
-        return ''
+        return ""
 
     def do_echo(self, *args) -> Status:
         """ Emette a video quello che è stato passato """
@@ -103,20 +104,6 @@ class Builtin:
         except FileNotFoundError:
             sys.stderr.write(f"cd: {location}: No such file or directory\n")
             return 1
-
-@dataclass
-class Command:
-    """ formatta un comando  """
-    raw  : List[AnyStr]
-    path : AnyStr = ""
-
-    @property
-    def name(self):
-        return self.raw[0]
-
-    @property
-    def args(self):
-        return self.raw[1:]
         
 @dataclass
 class Shell:
@@ -128,23 +115,65 @@ class Shell:
         # ultimo codice di errore
         self.status = -1
 
-    def _run_cmd(self, cmd: Command) -> Status:
+    def _run_cmd(self, cmd_line: str) -> Status:
         """ esegue un comando nel sistema """
-        # 1. Verifica se è un comando builtin
-        if self.builtins.is_builtin(cmd.name):
-            return self.builtins.cmd[cmd.name](*cmd.args)
-        # 2. Verifica se è un comando esterno
-        elif (exe_path := self.builtins.is_external(cmd.name)):
-            cmd.path = exe_path 
-            return self._execute(cmd)
-        # 3. Se non ne è nei primi due casi allora è un comando che non esiste
+        # 1. Controlla se c'è una redirezione nella stringa originale
+        redirection = self._redirect(cmd_line)
+        
+        # 2. Pulisci il comando dagli operatori di redirezione
+        if redirection:
+            # Rimuoviamo la parte della redirezione per avere il comando pulito
+            # Es: "echo ciao > file.txt" -> "echo ciao"
+            actual_cmd = cmd_line[:redirection.index].strip()
         else:
-            sys.stderr.write(f"{cmd.name}: command not found\n")
+            actual_cmd = cmd_line.strip()
+
+        # 3. Parsing degli argomenti
+        args = shlex.split(actual_cmd)
+        cmd_name, cmd_args = args[0], args[1:]
+        
+        # 4. Esecuzione con gestione di redirezione per (builtin/external)
+        if self.builtins.is_builtin(cmd_name):
+            if redirection:
+                with open(redirection.file, redirection.mode) as fd:
+                    with contextlib.redirect_stdout(fd) if redirection.stdout else contextlib.redirect_stderr(fd):
+                        # NOTE: punta stdout su un altro fd
+                        return self.builtins.cmd[cmd_name](*cmd_args)
+            return self.builtins.cmd[cmd_name](*cmd_args)
+        elif self.builtins.is_external(cmd_name):
+            if redirection:
+                return self._execute_and_redirect_on_file(
+                    redirection,
+                    *args
+                )
+            return self._execute(redirection, *args)
+        else:
+            sys.stderr.write(f"{cmd_name}: command not found\n")
             return 1
 
-    def _execute(self, cmd: Command) -> Status:
+    def _execute_and_redirect_on_file(self, r: Redirection, *args) -> Status:
+        """ Esegue un comando ed effettua il redirect su file """
+        with open(r.file, r.mode) as fd:
+            proc = Popen(
+                     args, 
+                     env=self.environment, 
+                     stdout=fd if r.stdout else None,
+                     stderr=fd if r.stderr else None
+                   )
+            proc.wait()
+            return proc.returncode
+
+    def _execute(self, r: Redirection, *args) -> Status:
+        """ Esegue un comando """
+        proc = Popen(
+            args, 
+            env=self.environment,
+            stdout=PIPE, 
+            stderr=PIPE,
+            text=True,
+            universal_newlines=True
+        )
         try:
-            proc     = Popen([cmd.name, *cmd.args], env=self.environment, stdout=PIPE, text=True)
             out, err = proc.communicate()
             if err:
                 sys.stderr.write(err)
@@ -156,16 +185,39 @@ class Shell:
             #       per mancanza di privilegi
             return 1
 
+    def _redirect(self, buffer: str) -> Redirection | None:
+        """ Gestisce il redirect su file """
+        redirect_operators = ('>', '1>', '2>')
+        append_operators = ('>>', '>>')
+        for op in redirect_operators:
+            # estrae la posizione in cui si trova l'operatore di redirezione
+            if (index := buffer.find(op)):
+                if index == -1:
+                    continue
+                # recupera il file su cui effettuare la redirect
+                file  = buffer[index+len(op):].strip()
+                return Redirection(
+                        index-len(op), 
+                        file, 
+                        "w",
+                        True if op in ('>', '1>') else False,
+                        True if op == '2>' else False
+                )
+    
+    def _pipe(self):
+        """ Gestisce l'esecuzione di una catena di comandi """
+        pass   
+
     def repl(self) -> None:
         """ Mostra la shell """
         while True:
             try:
-                raw = input(self.environment["PS1"]).strip()
-                if not raw:
+                cmd = input(self.environment["PS1"]).strip()
+                if not cmd:
                     continue
-                cmd = Command(shlex.split(raw))
                 self.status = self._run_cmd(cmd)
             except (EOFError, KeyboardInterrupt):
+                sys.stdout.write('\n')
                 continue
             except SystemExit:
                 raise
