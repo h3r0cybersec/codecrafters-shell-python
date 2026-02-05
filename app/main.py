@@ -4,20 +4,22 @@ import readline
 from subprocess import PIPE, Popen
 from typing import Dict, AnyStr, List
 from dataclasses import dataclass
+from collections import UserDict
 import shlex
 import os
 
 # ogni comando eseguito ritorna uno status code
 type Status = int
 
-class Environment(dict):
+class Environment(UserDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # eredita le variabili di sistema
         for key, value in os.environ.items():
-            self.setdefault(key, value)
+            if key not in self.data:  # Non sovrascrivere se passato in __init__
+                self.data[key] = value
         # sovrascrive con quelle personalizzate
-        self["PS1"] = "$ "
+        self.data["PS1"] = "$ "
 
 @dataclass
 class Builtin:
@@ -50,10 +52,12 @@ class Builtin:
         return ''
 
     def do_echo(self, *args) -> Status:
+        """ Emette a video quello che è stato passato """
         sys.stdout.write(f"{' '.join(args)}\n")
         return 0
 
     def do_exit(self, *args) -> Status:
+        """ Termina la shell """
         try:
             if len(args) > 0:
                 raise SystemExit(int(args[0]))
@@ -62,6 +66,7 @@ class Builtin:
             raise SystemExit(1)
 
     def do_type(self, *args) -> Status:
+        """ Mostra se un comando è builtin oppure no """
         out = ""
         for cmd in args:
             if self.is_builtin(cmd):
@@ -73,15 +78,31 @@ class Builtin:
         sys.stdout.write(out)
 
     def do_pwd(self, *args) -> Status:
+        """ Mostra la cartella corrente """
         sys.stdout.write(f"{os.getcwd()}\n")
         return 0
 
     def do_env(self, *args) -> Status:
+        """ Stampa le variabili d'ambiente predefinite """
         out = ""
         for key, value in self.env.items():
             out += f"{key}={value}\n"
         sys.stdout.write(out)
         return 0
+
+    def do_cd(self, *args) -> Status:
+        """ Permette di spostarsi nel filesystem """
+        if len(args) > 1:
+            sys.stderr.write(f"cd: too many arguments\n")
+            return 1
+        location = args[0]
+        try:
+            os.chdir(location)
+            self.env["OLDPWD"] = self.env["PWD"] 
+            self.env["PWD"] = location
+        except FileNotFoundError:
+            sys.stderr.write(f"cd: {location}: No such file or directory\n")
+            return 1
 
 @dataclass
 class Command:
@@ -122,13 +143,18 @@ class Shell:
             return 1
 
     def _execute(self, cmd: Command) -> Status:
-        proc     = Popen([cmd.name, *cmd.args], env=self.environment, stdout=PIPE, text=True)
-        out, err = proc.communicate()
-        if err:
-            sys.stderr.write(err)
-        else:
-            sys.stdout.write(out)
-        return proc.returncode
+        try:
+            proc     = Popen([cmd.name, *cmd.args], env=self.environment, stdout=PIPE, text=True)
+            out, err = proc.communicate()
+            if err:
+                sys.stderr.write(err)
+            else:
+                sys.stdout.write(out)
+            return proc.returncode
+        except PermissionError:
+            #FIXME: Utilizzare lo stesso modo che usa bash quanto un comando fallisce
+            #       per mancanza di privilegi
+            return 1
 
     def repl(self) -> None:
         """ Mostra la shell """
