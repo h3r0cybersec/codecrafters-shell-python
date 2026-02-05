@@ -95,7 +95,7 @@ class Builtin:
         if len(args) > 1:
             sys.stderr.write(f"cd: too many arguments\n")
             return 1
-        location = args[0]
+        location = os.path.expanduser(args[0]) if args[0].startswith("~") else args[0]
         try:
             os.chdir(location)
             self.env["OLDPWD"] = self.env["PWD"] 
