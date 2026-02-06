@@ -114,6 +114,8 @@ class Shell:
         self.builtins = Builtin(self.environment)
         # ultimo codice di stato ritornato
         self.status = -1
+        # gestisce lo stato interno per l'autocompletamento dei comandi
+        self.double_tab = False
         # configurazione readline per autocompletamento comandi
         readline.set_completer(self._auto_complete)
         readline.parse_and_bind("tab: complete")
@@ -134,7 +136,6 @@ class Shell:
         
     def _auto_complete(self, text: str, state: int):
         """ Gestisce l'autocompletamente dei comandi  """
-        # Dobbiamo calcolare la lista delle opzioni SOLO allo state 0.
         matches = []
         
         if text and state == 0:
@@ -142,12 +143,14 @@ class Shell:
             matches = [
                 cmd for cmd in self._get_all_executables(text)
             ]
-            
-        if state < len(matches):
-            found = matches[state]
-            return f"{found} "
-        else:
-            return None
+
+        match self.double_tab:
+            case True:
+                self.double_tab = False
+                return "\t".join(matches)
+            case False:
+                self.double_tab = True
+                return f"{matches[state]} " if state < len(matches) else None
         
 
     def _run_cmd(self, cmd_line: str) -> Status:
