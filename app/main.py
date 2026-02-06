@@ -215,9 +215,9 @@ class Shell:
                 case _:
                     # TODO: gestire correttamente una redirezione non valida
                     pass
-                    
+            
             return Redirection(
-                    index - 1 if len(op) == 2 else index, 
+                    index - 1 if len(op) == 2 else index - 2 if len(op) == 3 else index, 
                     file, 
                     mode,
                     stdout,
