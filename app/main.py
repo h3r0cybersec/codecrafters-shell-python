@@ -112,8 +112,30 @@ class Shell:
         self.environment = Environment()
         # list comandi builtin supportati dalla shell
         self.builtins = Builtin(self.environment)
-        # ultimo codice di errore
+        # ultimo codice di stato ritornato
         self.status = -1
+        # configurazione readline per autocompletamento comandi
+        # TODO: pre-inizializzare la lista dei comandi disponibili nel sistema
+        self.completitions = sorted(self._load_availables_command())
+        readline.set_completer(self._auto_complete)
+        readline.parse_and_bind("tab: complete")
+
+    def _load_availables_command(self) -> List[AnyStr]:
+        """ ritona la lista dei comandi supportati """
+
+        # comandi builtin
+        return list(self.builtins._internal.keys())
+        
+    def _auto_complete(self, text: str, state: int):
+          # Filtriamo le opzioni che iniziano con il testo inserito
+          results = [opt for opt in self.completitions if opt.startswith(text)]
+          
+          # Restituiamo l'opzione corrispondente allo stato attuale
+          if state < len(results):
+              found = results[state]
+              return f"{found} "
+          else:
+              return None
 
     def _run_cmd(self, cmd_line: str) -> Status:
         """ esegue un comando nel sistema """
@@ -226,7 +248,7 @@ class Shell:
     
     def _pipe(self):
         """ Gestisce l'esecuzione di una catena di comandi """
-        pass   
+        pass  
 
     def repl(self) -> None:
         """ Mostra la shell """
