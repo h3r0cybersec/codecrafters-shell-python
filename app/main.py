@@ -14,6 +14,19 @@ type Status = int
 
 Redirection = namedtuple("Redirection", "index, file, mode, stdout, stderr")
 
+def is_builtin(cmd: str, b: 'Builtin') -> bool:
+        return True if cmd in b._internal.keys() else False
+        
+def is_external(cmd: str, e: 'Environment') -> AnyStr:
+    search_path = e["PATH"].split(os.pathsep)
+    for loc in search_path:
+        try:
+            full_path = Path(loc) / cmd
+            if full_path.exists() and os.access(full_path, os.X_OK):
+                return full_path
+        except: continue
+    return ""
+
 class Environment(UserDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -39,19 +52,6 @@ class Builtin:
     def cmd(self):
         return self._internal
 
-    def is_builtin(self, cmd: str) -> bool:
-            return True if cmd in self._internal.keys() else False
-    
-    def is_external(self, cmd: str) -> AnyStr:
-        search_path = self.env["PATH"].split(":")
-        for loc in search_path:
-            try:
-                full_path = Path(loc) / cmd
-                if full_path.exists() and os.access(full_path, os.X_OK):
-                    return full_path
-            except: continue
-        return ""
-
     def do_echo(self, *args) -> Status:
         """ Emette a video quello che è stato passato """
         sys.stdout.write(f"{' '.join(args)}\n")
@@ -70,9 +70,9 @@ class Builtin:
         """ Mostra se un comando è builtin oppure no """
         out = ""
         for cmd in args:
-            if self.is_builtin(cmd):
+            if is_builtin(cmd, self):
                 out += f"{cmd} is a shell builtin\n"
-            elif (full_path := self.is_external(cmd)):
+            elif (full_path := is_external(cmd, self.env)):
                 out += f"{cmd} is {full_path}\n"
             else:
                 out += f"{cmd}: not found\n"
@@ -115,27 +115,40 @@ class Shell:
         # ultimo codice di stato ritornato
         self.status = -1
         # configurazione readline per autocompletamento comandi
-        # TODO: pre-inizializzare la lista dei comandi disponibili nel sistema
-        self.completitions = sorted(self._load_availables_command())
         readline.set_completer(self._auto_complete)
         readline.parse_and_bind("tab: complete")
 
-    def _load_availables_command(self) -> List[AnyStr]:
-        """ ritona la lista dei comandi supportati """
-
-        # comandi builtin
-        return list(self.builtins._internal.keys())
+    def _get_all_executables(self, text: str) -> List[str]:
+        execs = {k for k in self.builtins._internal.keys() if k.startswith(text)}
+        
+        path_dirs = self.environment.get("PATH", "").split(os.pathsep)
+        for directory in path_dirs:
+            d_path = Path(directory)
+            if not d_path.is_dir():
+                continue
+            # Filtraggio diretto con glob è più veloce di iterdir + startswith
+            for executable in d_path.glob(f"{text}*"):
+                if os.access(executable, os.X_OK):
+                    execs.add(executable.name)
+        return sorted(list(execs))
         
     def _auto_complete(self, text: str, state: int):
-          # Filtriamo le opzioni che iniziano con il testo inserito
-          results = [opt for opt in self.completitions if opt.startswith(text)]
-          
-          # Restituiamo l'opzione corrispondente allo stato attuale
-          if state < len(results):
-              found = results[state]
-              return f"{found} "
-          else:
-              return None
+        """ Gestisce l'autocompletamente dei comandi  """
+        # Dobbiamo calcolare la lista delle opzioni SOLO allo state 0.
+        matches = []
+        
+        if text and state == 0:
+            # Filtriamo subito per 'text' durante la scansione per essere più veloci
+            matches = [
+                cmd for cmd in self._get_all_executables(text)
+            ]
+            
+        if state < len(matches):
+            found = matches[state]
+            return f"{found} "
+        else:
+            return None
+        
 
     def _run_cmd(self, cmd_line: str) -> Status:
         """ esegue un comando nel sistema """
@@ -154,14 +167,14 @@ class Shell:
         cmd_name, cmd_args = args[0], args[1:]
         
         # 4. Esecuzione con gestione di redirezione per (builtin/external)
-        if self.builtins.is_builtin(cmd_name):
+        if is_builtin(cmd_name, self.builtins):
             if redirection:
                 with open(redirection.file, redirection.mode) as fd:
                     with contextlib.redirect_stdout(fd) if redirection.stdout else contextlib.redirect_stderr(fd):
                         # NOTE: punta stdout su un altro fd
                         return self.builtins.cmd[cmd_name](*cmd_args)
             return self.builtins.cmd[cmd_name](*cmd_args)
-        elif self.builtins.is_external(cmd_name):
+        elif is_external(cmd_name, self.environment):
             if redirection:
                 return self._execute_and_redirect_on_file(
                     redirection,
