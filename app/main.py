@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 import readline
-from subprocess import PIPE, Popen
+from subprocess import PIPE, STDOUT, Popen
 from typing import Dict, AnyStr, List
 from dataclasses import dataclass
 from collections import UserDict, namedtuple
@@ -123,7 +123,6 @@ class Shell:
         # 2. Pulisci il comando dagli operatori di redirezione
         if redirection:
             # Rimuoviamo la parte della redirezione per avere il comando pulito
-            # Es: "echo ciao > file.txt" -> "echo ciao"
             actual_cmd = cmd_line[:redirection.index].strip()
         else:
             actual_cmd = cmd_line.strip()
@@ -186,23 +185,44 @@ class Shell:
             return 1
 
     def _redirect(self, buffer: str) -> Redirection | None:
-        """ Gestisce il redirect su file """
-        redirect_operators = ('>', '1>', '2>')
-        append_operators = ('>>', '>>')
-        for op in redirect_operators:
-            # estrae la posizione in cui si trova l'operatore di redirezione
-            if (index := buffer.find(op)):
-                if index == -1:
-                    continue
-                # recupera il file su cui effettuare la redirect
-                file  = buffer[index+len(op):].strip()
-                return Redirection(
-                        index-len(op), 
-                        file, 
-                        "w",
-                        True if op in ('>', '1>') else False,
-                        True if op == '2>' else False
-                )
+        """ 
+            Gestisce il redirect
+            > 1> 2> >> 2>>
+        """
+        if (index := buffer.find('>')):
+            if index == -1:
+                return None
+
+            cur   = buffer[index]
+            left  = buffer[index - 1] if buffer[index - 1] == '1' or buffer[index - 1] == '2' else ''
+            right = buffer[index + 1] if buffer[index + 1] == '>' else ''
+            op = f"{left+cur+right}".strip()
+            is_double_op = op.count('>') > 1
+
+            # recupera il file su cui effettuare la redirect
+            file   = buffer[index+len(op):].strip()
+            mode   = ""
+            stdout = False
+            stderr = False
+            
+            match op:
+                case '>' | '1>' | '>>' | '1>>':
+                    stdout = True
+                    mode   = "w" if not is_double_op else "a"
+                case '2>' | '2>>':
+                    stderr = True
+                    mode   = "w" if not is_double_op else "a"
+                case _:
+                    # TODO: gestire correttamente una redirezione non valida
+                    pass
+                    
+            return Redirection(
+                    index - 1 if len(op) == 2 else index, 
+                    file, 
+                    mode,
+                    stdout,
+                    stderr
+            )
     
     def _pipe(self):
         """ Gestisce l'esecuzione di una catena di comandi """
