@@ -134,23 +134,30 @@ class Shell:
                     execs.add(executable.name)
         return sorted(list(execs))
         
-    def _auto_complete(self, text: str, state: int):
+    def _auto_complete(self, text: str, state: int) -> str | None:
         """ Gestisce l'autocompletamente dei comandi  """
         matches = []
         
         if text and state == 0:
             # Filtriamo subito per 'text' durante la scansione per essere più veloci
             matches = [
-                cmd for cmd in self._get_all_executables(text)
+                cmd for cmd in self._get_all_executables(text) if cmd.startswith(text)
             ]
 
-        match self.double_tab:
-            case True:
-                self.double_tab = False
-                return "\t".join(matches)
-            case False:
-                self.double_tab = True
-                return f"{matches[state]} " if state < len(matches) else None
+        if len(matches) == 1:
+            return f"{matches[0]} "
+
+        if state < len(matches):
+            match self.double_tab:
+                case True:
+                    s = '  '.join(matches)
+                    self.double_tab = False
+                    sys.stdout.write(f"\n{s}\r\n{self.environment['PS1']}{text}")
+                case False:
+                    self.double_tab = True
+                    return None
+        else:
+            return None
         
 
     def _run_cmd(self, cmd_line: str) -> Status:
