@@ -115,6 +115,7 @@ class Shell:
         # ultimo codice di stato ritornato
         self.status = -1
         # gestisce lo stato interno per l'autocompletamento dei comandi
+        self.is_lcp = False
         self.double_tab = False
         # configurazione readline per autocompletamento comandi
         readline.set_completer(self._auto_complete)
@@ -122,7 +123,6 @@ class Shell:
 
     def _get_all_executables(self, text: str) -> List[str]:
         execs = {k for k in self.builtins._internal.keys() if k.startswith(text)}
-        
         path_dirs = self.environment.get("PATH", "").split(os.pathsep)
         for directory in path_dirs:
             d_path = Path(directory)
@@ -133,31 +133,55 @@ class Shell:
                 if os.access(executable, os.X_OK):
                     execs.add(executable.name)
         return sorted(list(execs))
+
+    def _lcp(text: str, matches: list) -> str:
+        pass
+        
         
     def _auto_complete(self, text: str, state: int) -> str | None:
         """ Gestisce l'autocompletamente dei comandi  """
         matches = []
         
-        if text and state == 0:
+        if state == 0:
             # Filtriamo subito per 'text' durante la scansione per essere più veloci
             matches = [
                 cmd for cmd in self._get_all_executables(text) if cmd.startswith(text)
             ]
+            max_len = len(text)
+            matches = list(filter(lambda m: m.startswith(text), matches))
+            first = matches[0][max_len:]
+            last  = matches[-1][max_len:]
+            if first != last:
+                i = 0
+                lcp = ""
+                while i < len(first) and i < len(last) and first[i] == last[i]:
+                    lcp = matches[-1][:max_len + i + 1]
+                    i += 1
+                # Se il LCP è più lungo di quello che l'utente ha scritto,
+                # lo restituiamo come primo risultato.
+                if len(lcp) > len(text):
+                    matches = [f"{lcp}"]
+                    self.is_lcp = True
+            else:
+                matches[-1] = f"{matches[-1]}"
 
-        if len(matches) == 1:
-            return f"{matches[0]} "
-
+        # Restituiamo i match uno alla volta come richiesto da readline
         if state < len(matches):
-            match self.double_tab:
-                case True:
-                    s = '  '.join(matches)
+            # Aggiungi uno spazio se è un match univoco
+            if self.is_lcp and len(matches) == 1:
+                self.is_lcp = False
+                return matches[state]
+            elif len(matches) == 1:
+                return f"{matches[state]} "
+            else:
+                if self.double_tab:
                     self.double_tab = False
-                    sys.stdout.write(f"\n{s}\r\n{self.environment['PS1']}{text}")
-                case False:
-                    self.double_tab = True
+                    sys.stdout.write(f"\n{'  '.join(matches)}\n{self.environment['PS1']}{text}")
                     return None
-        else:
-            return None
+                else:
+                    self.double_tab = True
+                    None
+        return None
         
 
     def _run_cmd(self, cmd_line: str) -> Status:
