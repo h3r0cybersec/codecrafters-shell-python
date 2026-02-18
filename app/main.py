@@ -104,9 +104,18 @@ class Builtin:
         except FileNotFoundError:
             sys.stderr.write(f"cd: {location}: No such file or directory\n")
             return 1
+
+    def do_history(self, *args) -> Status:
+        """ Mostra la lista dei comandi precedentemente eseguiti """
+        #TODO: Gestire argomenti da riga di comando
+        stored_items = readline.get_current_history_length()
+        for item in range(stored_items):
+            sys.stdout.write(f"{item+1} {readline.get_history_item(item)}\n")
+        return 0
         
 @dataclass
 class Shell:
+    MAX_HISTORY_LINES = 1000
     def __post_init__(self) -> None:
         # variabili d'ambiente per la shell corrente
         self.environment = Environment()
@@ -117,6 +126,12 @@ class Shell:
         # gestisce lo stato interno per l'autocompletamento dei comandi
         self.is_lcp = False
         self.double_tab = False
+        # configura la history se non esiste su disco
+        try:
+            readline.read_history_file()
+            readline.set_history_length(self.MAX_HISTORY_LINES)
+        except FileNotFoundError:
+            pass
         # configurazione readline per autocompletamento comandi
         readline.set_completer(self._auto_complete)
         readline.parse_and_bind("tab: complete")
@@ -301,10 +316,10 @@ class Shell:
         """ Mostra la shell """
         while True:
             try:
-                cmd = input(self.environment["PS1"]).strip()
-                if not cmd:
+                line = input(self.environment["PS1"]).strip()
+                if not line:
                     continue
-                self.status = self._run_cmd(cmd)
+                self.status = self._run_cmd(line)
             except (EOFError, KeyboardInterrupt):
                 sys.stdout.write('\n')
                 continue
@@ -317,6 +332,8 @@ def main() -> None:
         s.repl()
     except SystemExit as exit_code:
         sys.exit(exit_code)
+    finally:
+        readline.write_history_file()
             
 if __name__ == "__main__":
     main()
