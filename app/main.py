@@ -5,6 +5,7 @@ from subprocess import PIPE, STDOUT, Popen
 from typing import Dict, AnyStr, List
 from dataclasses import dataclass
 from collections import UserDict, namedtuple
+from itertools import islice
 import contextlib
 import shlex
 import os
@@ -107,12 +108,18 @@ class Builtin:
 
     def do_history(self, *args) -> Status:
         """ Mostra la lista dei comandi precedentemente eseguiti """
-        #TODO: Gestire argomenti da riga di comando
-        items = readline.get_current_history_length()
-        start_from = int(args[0]) if len(args) > 0 else 1
-        assert(start_from < items)
-        for item in range(start_from, items):
-            sys.stdout.write(f"    {item} {readline.get_history_item(item)}\n")
+        lines_count = readline.get_current_history_length()
+        current_history = [                         \
+            (line, readline.get_history_item(line)) \
+            for line in range(1, lines_count)       \
+        ]
+        if len(args) > 0:
+            # ritorna dalla fine solo il numero di righe indicate 
+            for index, line in islice(current_history[-int(args[0])+1:], 0, None):
+                sys.stdout.write(f"    {index} {line}\n")
+        else:
+            for index, line in islice(current_history, 0, None):
+                sys.stdout.write(f"    {index} {line}\n")        
         return 0
         
 @dataclass
@@ -327,6 +334,8 @@ class Shell:
                 continue
             except SystemExit:
                 raise
+            finally:
+                readline.write_history_file()
         
 def main() -> None:
     try:
@@ -334,8 +343,7 @@ def main() -> None:
         s.repl()
     except SystemExit as exit_code:
         sys.exit(exit_code)
-    finally:
-        readline.write_history_file()
+        
             
 if __name__ == "__main__":
     main()
