@@ -108,9 +108,11 @@ class Builtin:
     def do_history(self, *args) -> Status:
         """ Mostra la lista dei comandi precedentemente eseguiti """
         #TODO: Gestire argomenti da riga di comando
-        stored_items = readline.get_current_history_length()
-        for item in range(stored_items):
-            sys.stdout.write(f"    {item+1} {readline.get_history_item(item+1)}\n")
+        items = readline.get_current_history_length()
+        start_from = int(args[0]) if len(args) > 0 else 1
+        assert(start_from < items)
+        for item in range(start_from, items):
+            sys.stdout.write(f"    {item} {readline.get_history_item(item)}\n")
         return 0
         
 @dataclass
