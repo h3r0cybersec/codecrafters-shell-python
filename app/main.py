@@ -110,7 +110,7 @@ class Builtin:
         #TODO: Gestire argomenti da riga di comando
         stored_items = readline.get_current_history_length()
         for item in range(stored_items):
-            sys.stdout.write(f"{item+1} {readline.get_history_item(item)}\n")
+            sys.stdout.write(f"    {item+1} {readline.get_history_item(item+1)}\n")
         return 0
         
 @dataclass
