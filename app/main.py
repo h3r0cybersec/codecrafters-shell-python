@@ -107,19 +107,22 @@ class Builtin:
             return 1
 
     def do_history(self, *args) -> Status:
-        """ Mostra la lista dei comandi precedentemente eseguiti """
+        """Mostra la lista dei comandi precedentemente eseguiti"""
+    
         lines_count = readline.get_current_history_length()
-        current_history = [                         \
-            (line, readline.get_history_item(line)) \
-            for line in range(1, lines_count)       \
+    
+        current_history = [
+            (index, readline.get_history_item(index))
+            for index in range(1, lines_count + 1)
         ]
-        if len(args) > 0:
-            # ritorna dalla fine solo il numero di righe indicate 
-            for index, line in islice(current_history[-int(args[0])+1:], 0, None):
-                sys.stdout.write(f"    {index} {line}\n")
-        else:
-            for index, line in islice(current_history, 0, None):
-                sys.stdout.write(f"    {index} {line}\n")        
+    
+        if args:
+            count = int(args[0])
+            current_history = current_history[-count:]
+    
+        for index, line in current_history:
+            sys.stdout.write(f"    {index} {line}\n")
+    
         return 0
         
 @dataclass
@@ -137,7 +140,7 @@ class Shell:
         self.double_tab = False
         # configura la history se non esiste su disco
         try:
-            readline.read_history_file()
+            #readline.read_history_file()
             readline.set_history_length(self.MAX_HISTORY_LINES)
         except FileNotFoundError:
             pass
@@ -210,6 +213,7 @@ class Shell:
 
     def _run_cmd(self, cmd_line: str) -> Status:
         """ esegue un comando nel sistema """
+        
         # 1. Controlla se c'è una redirezione nella stringa originale
         redirection = self._redirect(cmd_line)
         
@@ -328,14 +332,15 @@ class Shell:
                 line = input(self.environment["PS1"]).strip()
                 if not line:
                     continue
+                #readline.add_history(line)
                 self.status = self._run_cmd(line)
             except (EOFError, KeyboardInterrupt):
                 sys.stdout.write('\n')
                 continue
             except SystemExit:
                 raise
-            finally:
-                readline.write_history_file()
+            #finally:
+            #    readline.write_history_file()
         
 def main() -> None:
     try:
