@@ -249,7 +249,13 @@ class Builtin:
         parser.add_argument(
             "-r",
             "--read_from_file",
-            help="read history file from another location"
+            help="read history from file"
+        )
+
+        parser.add_argument(
+            "-w",
+            "--write_to_file",
+            help="write history to file"
         )
 
         parser.add_argument(
@@ -267,6 +273,10 @@ class Builtin:
 
         if parsed.read_from_file:
             readline.read_history_file(parsed.read_from_file)
+            return 0
+
+        if parsed.write_to_file:
+            readline.write_history_file(parsed.write_to_file)
             return 0
                 
         lines_count = readline.get_current_history_length()
