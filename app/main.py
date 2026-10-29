@@ -1,4 +1,6 @@
 import sys
+import numbers
+import argparse
 from pathlib import Path
 import readline
 from subprocess import PIPE, STDOUT, Popen
@@ -38,6 +40,18 @@ class Environment(UserDict):
         # sovrascrive con quelle personalizzate
         self.data["PS1"] = "$ "
 
+class ShellArgumentParser(argparse.ArgumentParser):
+
+    def error(self, message):
+        raise ValueError(message)
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, sys.stdout)
+
+        if status != 0:
+            raise ValueError(message)
+
 @dataclass
 class Builtin:
     """ comandi builtin """
@@ -55,71 +69,216 @@ class Builtin:
 
     def do_echo(self, *args) -> Status:
         """ Emette a video quello che è stato passato """
-        sys.stdout.write(f"{' '.join(args)}\n")
+        parser = ShellArgumentParser(
+            prog="echo",
+            description="display a line of text",
+        )
+        
+        parser.add_argument(
+            "-n",
+            action="store_true",
+            help="non aggiunge il newline finale",
+        )
+
+        parser.add_argument(
+            "-u",
+            action="store_true",
+            help="converte il testo in maiuscolo",
+        )
+
+        parser.add_argument(
+            "text",
+            nargs="*",
+            help="testo da stampare",
+        )
+
+        try:
+            parsed = parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"echo: {exc}\n")
+            return 1
+
+        output = " ".join(parsed.text)
+
+        if parsed.u:
+            output = output.upper()
+
+        sys.stdout.write(output)
+
+        if not parsed.n:
+            sys.stdout.write("\n")
+
         return 0
 
     def do_exit(self, *args) -> Status:
-        """ Termina la shell """
+        """Termina la shell."""
+        parser = ShellArgumentParser(prog="exit")
+        parser.add_argument(
+            "status",
+            nargs="?",
+            type=int,
+            default=0,
+            help="codice di uscita",
+        )
+    
         try:
-            if len(args) > 0:
-                raise SystemExit(int(args[0]))
-            raise SystemExit(0)
-        except ValueError:
+            parsed = parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"exit: {exc}\n")
             raise SystemExit(1)
+    
+        raise SystemExit(parsed.status)
 
     def do_type(self, *args) -> Status:
-        """ Mostra se un comando è builtin oppure no """
+        """Mostra se un comando è builtin oppure esterno."""
+        parser = ShellArgumentParser(prog="type")
+        parser.add_argument(
+            "commands",
+            nargs="+",
+            metavar="COMMAND",
+            help="comandi da verificare",
+        )
+    
+        try:
+            parsed = parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"type: {exc}\n")
+            return 2
+    
         out = ""
-        for cmd in args:
+    
+        for cmd in parsed.commands:
             if is_builtin(cmd, self):
                 out += f"{cmd} is a shell builtin\n"
             elif (full_path := is_external(cmd, self.env)):
                 out += f"{cmd} is {full_path}\n"
             else:
                 out += f"{cmd}: not found\n"
+    
         sys.stdout.write(out)
+        return 0
 
     def do_pwd(self, *args) -> Status:
-        """ Mostra la cartella corrente """
+        """Mostra la cartella corrente."""
+        parser = ShellArgumentParser(prog="pwd")
+    
+        try:
+            parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"pwd: {exc}\n")
+            return 2
+    
         sys.stdout.write(f"{os.getcwd()}\n")
         return 0
 
     def do_env(self, *args) -> Status:
-        """ Stampa le variabili d'ambiente predefinite """
-        out = ""
-        for key, value in self.env.items():
-            out += f"{key}={value}\n"
+        """Stampa le variabili d'ambiente."""
+        parser = ShellArgumentParser(prog="env")
+    
+        try:
+            parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"env: {exc}\n")
+            return 2
+    
+        out = "".join(
+            f"{key}={value}\n"
+            for key, value in self.env.items()
+        )
+    
         sys.stdout.write(out)
         return 0
 
     def do_cd(self, *args) -> Status:
-        """ Permette di spostarsi nel filesystem """
-        if len(args) > 1:
-            sys.stderr.write(f"cd: too many arguments\n")
-            return 1
-        location = os.path.expanduser(args[0]) if args[0].startswith("~") else args[0]
+        """Permette di spostarsi nel filesystem."""
+        parser = ShellArgumentParser(prog="cd")
+        parser.add_argument(
+            "location",
+            nargs="?",
+            default=None,
+            help="directory di destinazione",
+        )
+    
         try:
+            parsed = parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"cd: {exc}\n")
+            return 2
+    
+        if parsed.location is None:
+            location = self.env.get("HOME", os.path.expanduser("~"))
+        elif parsed.location == "-":
+            location = self.env.get("OLDPWD")
+    
+            if location is None:
+                sys.stderr.write("cd: OLDPWD not set\n")
+                return 1
+    
+            sys.stdout.write(f"{location}\n")
+        else:
+            location = parsed.location
+    
+        location = os.path.abspath(os.path.expanduser(location))
+    
+        try:
+            old_location = os.getcwd()
             os.chdir(location)
-            self.env["OLDPWD"] = self.env["PWD"] 
-            self.env["PWD"] = location
-        except FileNotFoundError:
-            sys.stderr.write(f"cd: {location}: No such file or directory\n")
+    
+            self.env["OLDPWD"] = old_location
+            self.env["PWD"] = os.getcwd()
+    
+        except (FileNotFoundError, NotADirectoryError):
+            sys.stderr.write(
+                f"cd: {location}: No such file or directory\n"
+            )
             return 1
+        except PermissionError:
+            sys.stderr.write(f"cd: {location}: Permission denied\n")
+            return 1
+    
+        return 0
 
     def do_history(self, *args) -> Status:
         """Mostra la lista dei comandi precedentemente eseguiti"""
-    
+
+        parser = ShellArgumentParser(
+            prog="history",
+            description="show history of commands",
+        )
+
+        parser.add_argument(
+            "-r",
+            "--read_from_file",
+            help="read history file from another location"
+        )
+
+        parser.add_argument(
+            "line_number",
+            nargs="?",
+            type=int,
+            help="show history starting from line number"
+        )
+
+        try:
+            parsed = parser.parse_args(list(args))
+        except ValueError as exc:
+            sys.stderr.write(f"history: {exc}\n")
+            return 1
+
+        if parsed.read_from_file:
+            readline.read_history_file(parsed.read_from_file)
+            return 0
+                
         lines_count = readline.get_current_history_length()
     
         current_history = [
             (index, readline.get_history_item(index))
             for index in range(1, lines_count + 1)
         ]
-    
-        if args:
-            count = int(args[0])
-            current_history = current_history[-count:]
-    
+
+        if parsed.line_number:
+            current_history = current_history[-parsed.line_number:]
+
         for index, line in current_history:
             sys.stdout.write(f"    {index} {line}\n")
     
