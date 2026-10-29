@@ -322,12 +322,18 @@ class Shell:
         # gestisce lo stato interno per l'autocompletamento dei comandi
         self.is_lcp = False
         self.double_tab = False
-        # configura la history se non esiste su disco
-        try:
-            #readline.read_history_file()
-            readline.set_history_length(self.MAX_HISTORY_LINES)
-        except FileNotFoundError:
-            pass
+        # configura la history 
+        histfile = self.environment.get("HISTFILE")
+        if histfile and histfile != "/dev/null":
+            try:
+                readline.read_history_file(histfile)
+            except OSError as e:
+                print(f"HISTFILE={histfile!r}", file=sys.stderr)
+                raise
+            except FileNotFoundError:
+                readline.read_history_file()
+                
+        readline.set_history_length(self.MAX_HISTORY_LINES)
         # configurazione readline per autocompletamento comandi
         readline.set_completer(self._auto_complete)
         readline.parse_and_bind("tab: complete")
