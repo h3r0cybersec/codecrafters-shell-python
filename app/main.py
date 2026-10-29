@@ -63,6 +63,7 @@ class Builtin:
         for attr in dir(self):
             if attr.startswith("do_"):
                 self._internal[attr[3:]] = getattr(self, attr)
+        
     @property
     def cmd(self):
         return self._internal
@@ -259,6 +260,12 @@ class Builtin:
         )
 
         parser.add_argument(
+            "-a",
+            "--append_to_file",
+            help="append history to file"
+        )
+        
+        parser.add_argument(
             "line_number",
             nargs="?",
             type=int,
@@ -277,6 +284,14 @@ class Builtin:
 
         if parsed.write_to_file:
             readline.write_history_file(parsed.write_to_file)
+            return 0
+
+        if parsed.append_to_file:
+            current_history_items = readline.get_current_history_length()
+            readline.append_history_file(
+                current_history_items, parsed.append_to_file
+            )
+            readline.clear_history()
             return 0
                 
         lines_count = readline.get_current_history_length()
