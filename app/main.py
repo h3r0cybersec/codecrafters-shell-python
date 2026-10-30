@@ -323,16 +323,21 @@ class Shell:
         self.is_lcp = False
         self.double_tab = False
         # configura la history 
-        histfile = self.environment.get("HISTFILE")
-        if histfile and histfile != "/dev/null":
+        self.histfile = self.environment.get("HISTFILE")
+        if self.histfile and self.histfile != "/dev/null":
             try:
-                readline.read_history_file(histfile)
+                readline.read_history_file(self.histfile)
             except OSError as e:
-                print(f"HISTFILE={histfile!r}", file=sys.stderr)
-                raise
-            except FileNotFoundError:
+                sys.stderr.write(
+                    f"cannot load the history from {self.histfile!r} due to error {e}\n"
+                )
+        else:
+            # carica la history dal file di default ./history se presente
+            try:
                 readline.read_history_file()
-                
+            except FileNotFoundError:
+                # TODO: mostrare un warning a video
+                pass    
         readline.set_history_length(self.MAX_HISTORY_LINES)
         # configurazione readline per autocompletamento comandi
         readline.set_completer(self._auto_complete)
@@ -529,8 +534,18 @@ class Shell:
                 continue
             except SystemExit:
                 raise
-            #finally:
-            #    readline.write_history_file()
+            finally:
+                if self.histfile:
+                    try:
+                        readline.write_history_file(self.histfile)
+                    except OSError as e:
+                        # TODO: Notificare a video che la history non viene salvata
+                        sys.stderr.write(
+                            f"cannot store the history on {self.histfile!r} due to error {e}\n"
+                        )
+                else:
+                    # salva la history sul file di default -> ./history
+                    readline.write_history_file()
         
 def main() -> None:
     try:

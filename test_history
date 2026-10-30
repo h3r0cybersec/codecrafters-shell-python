@@ -1,0 +1,25 @@
+cat test_history 
+history --help
+codecrafters test
+codecrafters submit
+ls
+rm test_history 
+codecrafters test
+env |grep HISTFILE
+codecrafters test
+python3 app/main.py 
+export HISTFILE=test_history
+python3 app/main.py
+ls
+ls app/
+python3 app/main.py
+ls
+ls -la ~/
+ls
+ls app/
+ls -la
+codecrafters test
+python3 -V
+python3 app/main.py
+codecrafters test
+codecrafters submit
